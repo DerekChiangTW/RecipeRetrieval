@@ -12,36 +12,31 @@ import torchvision.transforms as transforms
 
 def default_loader(path):
     try:
-        im = Image.open(path).convert('RGB')
-        return im
+        return Image.open(path).convert('RGB')
     except:
         print("Failed to Load Image")
         return Image.new('RGB', (224, 224), 'white')
 
 
 class ImageDataset(data.Dataset):
-    def __init__(self, img_path, transform=None, target_transform=None,
-                 loader=default_loader, square=False, data_path=None, partition=None):
+    def __init__(self, dish_img_path, dish_info_path, ingr_img_path, vocab_path, partition, transform=None,
+                 target_transform=None, loader=default_loader, square=False, num_images=10):
 
-        if data_path is None:
-            raise Exception('No data path specified.')
-
-        if partition is None:
-            raise Exception('Unknown partition type %s.' % partition)
-        else:
-            self.partition = partition
-
-        self.env = lmdb.open(os.path.join(data_path, partition + '_lmdb'), max_readers=1, readonly=True,
-                             lock=False, readahead=False, meminit=False)
-        with open(os.path.join(data_path, partition + '_keys.pkl'), 'rb') as f:
+        self.env = lmdb.open(os.path.join(dish_info_path, partition, partition + '_lmdb'),
+                             max_readers=1, readonly=True, lock=False, readahead=False, meminit=False)
+        with open(os.path.join(dish_info_path, partition, partition + '_keys.pkl'), 'rb') as f:
             self.ids = pickle.load(f)
 
-        self.square = square
-        self.imgPath = img_path
-        self.mismtch = 0.8
+        self.dish_img_path = dish_img_path
+        self.ingr_img_path = ingr_img_path
+        self.vocab_path = vocab_path
+        self.partition = partition
         self.transform = transform
         self.target_transform = target_transform
         self.loader = loader
+        self.square = square
+        self.num_images = num_images
+        self.mismtch = 0.8
 
     def __getitem__(self, index):
         # we force 80 percent of them to be a mismatch
@@ -54,7 +49,7 @@ class ImageDataset(data.Dataset):
 
         target = match and 1 or -1
 
-        # Load dish sample and dish image
+        # Load dish image
         with self.env.begin(write=False) as txn:
             serialized_sample = txn.get(self.ids[index])
         sample = pickle.loads(serialized_sample)
@@ -70,7 +65,7 @@ class ImageDataset(data.Dataset):
 
             loader_path = [imgs[imgIdx]['id'][i] for i in range(4)]
             loader_path = os.path.join(*loader_path)
-            path = os.path.join(self.imgPath, self.partition, loader_path, imgs[imgIdx]['id'])
+            path = os.path.join(self.dish_img_path, self.partition, loader_path, imgs[imgIdx]['id'])
         else:
             # we randomly pick one non-matching image
             all_idx = range(len(self.ids))
@@ -90,10 +85,10 @@ class ImageDataset(data.Dataset):
             else:
                 imgIdx = 0
             # Not sure if the commented line is a bug
-            # path = self.imgPath + rndimgs[imgIdx]['id']
+            # path = self.dish_img_path + rndimgs[imgIdx]['id']
             loader_path = [rndimgs[imgIdx]['id'][i] for i in range(4)]
             loader_path = os.path.join(*loader_path)
-            path = os.path.join(self.imgPath, self.partition, loader_path, rndimgs[imgIdx]['id'])
+            path = os.path.join(self.dish_img_path, self.partition, loader_path, rndimgs[imgIdx]['id'])
 
         # ingredients
         ingrs = sample['ingrs'].astype(int)
@@ -132,24 +127,20 @@ class ImageDataset(data.Dataset):
     def __len__(self):
         return len(self.ids)
 
-    def get_ingr_imgs(self, indices, num_images=10):
-        vocab_path = os.path.join('..', 'data', 'vocab.txt')
-        ingr_img_dir = os.path.join('..', 'data', 'ingr_img')
-
+    def get_ingr_imgs(self, indices):
         # read all vocab
-        with open(vocab_path) as infile:
+        with open(self.vocab_path) as infile:
             vocabs = [line.rstrip() for line in infile]
 
         # get ingredient names
-        split = np.minimum(num_images, max(np.nonzero(indices)[0]))
+        split = min(self.num_images, max(np.nonzero(indices)[0]))
         ingr_names = [vocabs[i - 2] for i in indices[:split]]
 
         # get ingredient images
-        ingr_imgs = torch.zeros((num_images, 3, 224, 224))
-        for i in range(num_images):
-            path = ''
+        ingr_imgs = torch.zeros((self.num_images, 3, 224, 224))
+        for i in range(self.num_images):
             if i < len(ingr_names):
-                folder = os.path.join(ingr_img_dir, ingr_names[i])
+                folder = os.path.join(self.ingr_img_path, ingr_names[i])
                 path = os.path.join(folder, np.random.choice(os.listdir(folder)))
 
                 # load ingredient image
@@ -169,14 +160,15 @@ def tensor_to_numpy(x):
 
 
 if __name__ == "__main__":
-    val_dataset = ImageDataset("./../data/dish_img",
-                               transforms.Compose([
+    val_dataset = ImageDataset(dish_img_path="../data/dish_img", dish_info_path='../data/dish_info',
+                               ingr_img_path='../data/ingr_img', vocab_path='../data/vocab.txt',
+                               partition='val',
+                               transform=transforms.Compose([
                                    transforms.Resize(256),
                                    transforms.CenterCrop(224),
                                    transforms.ToTensor(),
                                    transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                                        std=[0.229, 0.224, 0.225]),
-                               ]), data_path='../data/dish_info/val', partition='val')
+                                                        std=[0.229, 0.224, 0.225])]))
     [dish_img, ingr_imgs, igr_ln], [target, img_id, rec_id] = val_dataset[4]
 
     import matplotlib.pyplot as plt

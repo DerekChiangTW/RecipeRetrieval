@@ -7,9 +7,9 @@ import torchvision.models as models
 
 
 class img2img(nn.Module):
-    def __init__(self, num_ingred=10, imfeatDim=2048, embDim=1024):
+    def __init__(self, num_ingr=10, imfeatDim=2048, embDim=1024):
         super(img2img, self).__init__()
-        self.num_ingred = num_ingred
+        self.num_ingr = num_ingr
         self.imfeatDim = imfeatDim
         self.embDim = embDim
 
@@ -21,12 +21,11 @@ class img2img(nn.Module):
         resnet_modules = list(resnet.children())[:-1]
         self.visionMLP = nn.Sequential(*resnet_modules)
         self.visual_embedding = nn.Sequential(nn.Linear(imfeatDim, embDim), nn.Tanh())
-        self.ingred_embedding = nn.Sequential(nn.Linear(embDim * num_ingred, embDim), nn.Tanh())
+        self.ingr_embedding = nn.Sequential(nn.Linear(embDim * num_ingr, embDim), nn.Tanh())
 
-    def forward(self, dish_img, ingred_imgs):
-        # dish_img:     size (bsz, 3, 224, 224)
-        # ingred_imgs:  size (bsz, 10, 3, 224, 224)
-        assert len(ingred_imgs.size()) == 5
+    def forward(self, dish_img, ingr_imgs):
+        # dish_img:   size (batch_size, 3, 224, 224)
+        # ingr_imgs:  size (batch_size, num_ingr, 3, 224, 224)
 
         # dish embedding
         dish_feat = self.visionMLP(dish_img)                # size (bsz, 2048, 1, 1)
@@ -34,20 +33,20 @@ class img2img(nn.Module):
         dish_emb = self.visual_embedding(dish_feat)         # size (bsz, 1024)
 
         # individual ingredient embedding
-        bsz, num_ingred, c, h, w = ingred_imgs.size()
-        ingred_feats = self.visionMLP(ingred_imgs.view(-1, c, h, w))    # size (bsz * 10, 2048, 1, 1)
-        ingred_feats = ingred_feats.view(ingred_feats.size(0), -1)      # size (bsz * 10, 2048)
-        ingred_embs = self.visual_embedding(ingred_feats)               # size (bsz * 10, 1024)
+        bsz, num_ingr, c, h, w = ingr_imgs.size()
+        ingr_feats = self.visionMLP(ingr_imgs.view(-1, c, h, w))    # size (bsz * num_ingr, 2048, 1, 1)
+        ingr_feats = ingr_feats.view(ingr_feats.size(0), -1)        # size (bsz * num_ingr, 2048)
+        ingr_embs = self.visual_embedding(ingr_feats)               # size (bsz * num_ingr, 1024)
 
         # concatenate the ingredient embeddings
-        concat_ingred = ingred_embs.view(bsz, -1)                       # size (bsz, 1024 * 10)
-        ingred_embs = self.ingred_embedding(concat_ingred)              # size (bsz, 1024)
+        concat_ingr = ingr_embs.view(bsz, -1)           # size (bsz, 1024 * 10)
+        ingr_embs = self.ingr_embedding(concat_ingr)    # size (bsz, 1024)
 
-        output = [dish_emb, ingred_embs]
+        output = [dish_emb, ingr_embs]
         return output
 
 
 if __name__ == "__main__":
     net = img2img()
     bsz = 5
-    dish_emb, ingred_embs = net(torch.randn(bsz, 3, 224, 224), torch.randn(bsz, 10, 3, 224, 224))
+    dish_emb, ingr_embs = net(torch.randn(bsz, 3, 224, 224), torch.randn(bsz, 10, 3, 224, 224))
