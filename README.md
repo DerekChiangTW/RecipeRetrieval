@@ -3,8 +3,7 @@
 ## Team members
 
 1. Che-Ting Lin
-2. Yen-Chieh Lien
-3. Chao-Ching Chiang
+2.  Chao-Ching Chiang
 
 ## Links
 [ResNet-50](http://ethereon.github.io/netscope/#/gist/db945b393d40bfa26006)  
