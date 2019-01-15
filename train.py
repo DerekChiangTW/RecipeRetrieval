@@ -9,7 +9,6 @@ import torchvision.transforms as transforms
 from src.model import *
 from src.dataset import *
 
-
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
@@ -25,17 +24,17 @@ def get_args():
     parser.add_argument("--dish_info_path", type=str, default="data/dish_info")
     parser.add_argument("--ingr_img_path", type=str, default="data/ingr_img")
     parser.add_argument("--vocab_path", type=str, default="data/vocab.txt")
+    parser.add_argument("--title_path", type=str, default="data/title_map.json")
     args = parser.parse_args()
     return args
 
 
 def train(opt):
-
     # set image transformation methods
     transform = transforms.Compose([
         transforms.Resize(256),
-        transforms.CenterCrop(256),     # we get only the center of that rescaled
-        transforms.RandomCrop(224),     # random crop within the center crop
+        transforms.CenterCrop(256),  # we get only the center of that rescaled
+        transforms.RandomCrop(224),  # random crop within the center crop
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -43,11 +42,9 @@ def train(opt):
 
     # prepare the train, validate and test loader
     training_set = ImageDataset(opt.dish_img_path, opt.dish_info_path, opt.ingr_img_path, opt.vocab_path,
-                                'train', transform=transform)
-    validate_set = ImageDataset(opt.dish_img_path, opt.dish_info_path, opt.ingr_img_path, opt.vocab_path,
-                                'val', transform=transform)
-    testing_set = ImageDataset(opt.dish_img_path, opt.dish_info_path, opt.ingr_img_path, opt.vocab_path,
-                               'test', transform=transform)
+                                opt.title_path,'train', transform=transform)
+    validate_set = ImageDataset(opt.dish_img_path, opt.dish_info_path, opt.ingr_img_path, opt.vocab_path,'val', transform=transform)
+    testing_set = ImageDataset(opt.dish_img_path, opt.dish_info_path, opt.ingr_img_path, opt.vocab_path,'test', transform=transform)
     train_loader = data.DataLoader(training_set, batch_size=opt.batch_size, shuffle=True)
     val_loader = data.DataLoader(validate_set, batch_size=opt.batch_size, shuffle=False)
     test_loader = data.DataLoader(testing_set, batch_size=opt.batch_size, shuffle=False)
@@ -64,11 +61,11 @@ def train(opt):
     model.train()
     for epoch in range(opt.num_epochs):
         for itr, (input, target) in enumerate(train_loader):
-            [dish_img, ingr_imgs, igr_ln] = [record.to(device) for record in input]
+            [dish_img, ingr_imgs, igr_ln, instrs, itr_ln] = [record.to(device) for record in input]
             target = [record.to(device) for record in target]
 
             optimizer.zero_grad()
-            [dish_emb, ingr_embs] = model(dish_img, ingr_imgs)
+            [dish_emb, ingr_embs] = model(dish_img, ingr_imgs, instrs, itr_ln)
             loss = criterion(dish_emb, ingr_embs, target[0])
             loss.backward()
             optimizer.step()

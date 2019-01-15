@@ -8,18 +8,19 @@ import pickle
 import numpy as np
 import torch.utils.data as data
 import torchvision.transforms as transforms
+import json
 
 
 def default_loader(path):
     try:
         return Image.open(path).convert('RGB')
     except:
-        print("Failed to Load Image")
+        print("Failed to Load Image : ", path)
         return Image.new('RGB', (224, 224), 'white')
 
 
 class ImageDataset(data.Dataset):
-    def __init__(self, dish_img_path, dish_info_path, ingr_img_path, vocab_path, partition, transform=None,
+    def __init__(self, dish_img_path, dish_info_path, ingr_img_path, vocab_path, title_path, partition, transform=None,
                  target_transform=None, loader=default_loader, square=False, num_images=10):
 
         self.env = lmdb.open(os.path.join(dish_info_path, partition, partition + '_lmdb'),
@@ -37,6 +38,9 @@ class ImageDataset(data.Dataset):
         self.square = square
         self.num_images = num_images
         self.mismtch = 0.8
+        self.maxInst = 20
+        with open(title_path) as json_file:
+            self.title_map = json.load(json_file)
 
     def __getitem__(self, index):
         # we force 80 percent of them to be a mismatch
@@ -90,6 +94,16 @@ class ImageDataset(data.Dataset):
             loader_path = os.path.join(*loader_path)
             path = os.path.join(self.dish_img_path, self.partition, loader_path, rndimgs[imgIdx]['id'])
 
+        # instructions
+        instrs = sample['intrs']
+        itr_ln = len(instrs)
+        t_inst = np.zeros((self.maxInst, np.shape(instrs)[1]), dtype=np.float32)
+        if itr_ln > self.maxInst:
+            t_inst[:self.maxInst][:] = instrs[:self.maxInst][:]
+        else:
+            t_inst[:itr_ln][:] = instrs[:itr_ln][:]
+        instrs = torch.FloatTensor(t_inst)
+
         # ingredients
         ingrs = sample['ingrs'].astype(int)
         ingrs = torch.LongTensor(ingrs)
@@ -118,14 +132,23 @@ class ImageDataset(data.Dataset):
             # img_class = sample['classes'] - 1
             img_id = self.ids[index]
 
+        # title
+        title = self.title_map[rec_id]
+
+        """
         # output
         if self.partition == 'train':
-            return [dish_img, ingr_imgs, igr_ln], [target]
+            return [dish_img, ingr_imgs, igr_ln, instrs, itr_ln, title], [target]
         else:
-            return [dish_img, ingr_imgs, igr_ln], [target, img_id, rec_id]
+            return [dish_img, ingr_imgs, igr_ln, instrs, itr_ln, title], [target, img_id, rec_id]
+        """
+        # print("sampluee:")
+        # print(sample)
+        return [dish_img, ingr_imgs, igr_ln, instrs, itr_ln, title], [target]
 
     def __len__(self):
-        return len(self.ids)
+        return 4
+        # return len(self.ids)
 
     def get_ingr_imgs(self, indices):
         # read all vocab
@@ -162,6 +185,7 @@ def tensor_to_numpy(x):
 if __name__ == "__main__":
     val_dataset = ImageDataset(dish_img_path="../data/dish_img", dish_info_path='../data/dish_info',
                                ingr_img_path='../data/ingr_img', vocab_path='../data/vocab.txt',
+                               title_path='../data/title_map.json',
                                partition='val',
                                transform=transforms.Compose([
                                    transforms.Resize(256),
@@ -169,9 +193,12 @@ if __name__ == "__main__":
                                    transforms.ToTensor(),
                                    transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                                         std=[0.229, 0.224, 0.225])]))
-    [dish_img, ingr_imgs, igr_ln], [target, img_id, rec_id] = val_dataset[4]
+    [dish_img, ingr_imgs, igr_ln, instrs, itr_ln, title], [target, img_id, rec_id] = val_dataset[4]
+
+    print (title)
 
     import matplotlib.pyplot as plt
+
     # show dish image
     plt.imshow(tensor_to_numpy(dish_img))
     plt.show()
